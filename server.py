@@ -245,6 +245,50 @@ HTML = """<!DOCTYPE html>
     display: flex; flex-wrap: wrap; gap: 0.5rem 1.5rem;
   }
   .api-hint code { color: var(--accent); font-family: monospace; }
+
+  /* Agent prompt card */
+  .prompt-card {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 1.5rem;
+    margin-bottom: 1.5rem;
+    background-image: linear-gradient(135deg, rgba(91,138,240,0.05) 0%, rgba(124,91,240,0.05) 100%);
+  }
+  .prompt-card-header {
+    display: flex; align-items: center; justify-content: space-between;
+    margin-bottom: 1rem;
+  }
+  .prompt-card-header h2 {
+    font-size: 0.9rem; font-weight: 600; color: var(--muted);
+    text-transform: uppercase; letter-spacing: 0.08em;
+  }
+  .prompt-label {
+    display: inline-flex; align-items: center; gap: 0.3rem;
+    font-size: 0.72rem; font-weight: 600; letter-spacing: 0.07em;
+    text-transform: uppercase;
+    color: var(--accent2); background: rgba(124,91,240,0.12);
+    border: 1px solid rgba(124,91,240,0.35);
+    padding: 3px 10px; border-radius: 999px;
+  }
+  .prompt-body {
+    position: relative;
+    background: var(--surface2); border: 1px solid var(--border);
+    border-radius: 8px; padding: 1rem 1.1rem;
+  }
+  .prompt-body pre {
+    font-family: 'Inter', sans-serif; font-size: 0.875rem;
+    color: var(--text); white-space: pre-wrap; word-break: break-word;
+    line-height: 1.6; margin: 0;
+  }
+  .copy-btn {
+    position: absolute; top: 0.6rem; right: 0.6rem;
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 6px; color: var(--muted); cursor: pointer;
+    font-family: inherit; font-size: 0.75rem; font-weight: 500;
+    padding: 4px 10px; transition: color 0.2s, border-color 0.2s, background 0.2s;
+    box-shadow: none;
+  }
+  .copy-btn:hover { color: var(--accent); border-color: var(--accent); background: var(--surface2); }
+  .copy-btn.copied { color: var(--success); border-color: var(--success); }
 </style>
 </head>
 <body>
@@ -295,6 +339,24 @@ HTML = """<!DOCTYPE html>
     </ul>
   </div>
 
+  <!-- Agent prompt -->
+  <div class="prompt-card">
+    <div class="prompt-card-header">
+      <h2>Agent Prompt</h2>
+      <span class="prompt-label">🤖 Copy &amp; paste into your agent</span>
+    </div>
+    <div class="prompt-body">
+      <button class="copy-btn" id="copyBtn" onclick="copyPrompt()">Copy</button>
+      <pre id="agentPrompt">Monitor the API at http://localhost:8000/status continuously until a success status is returned.
+
+Rules:
+  - If status is pending, wait 10 seconds and poll again.
+  - If status is failure, read the context field and apply the corrective measures described in it. Do NOT post any status update to the API yourself — only the system sets the status. After applying the fix, resume polling every 10 seconds.
+  - Repeat this loop indefinitely until the API returns success.
+  - Only stop when success is confirmed from the API.</pre>
+    </div>
+  </div>
+
   <!-- API hint -->
   <div class="api-hint">
     <span><code>GET /status</code> → latest JSON</span>
@@ -307,6 +369,25 @@ HTML = """<!DOCTYPE html>
 
 <script>
 const fmtTs = iso => iso ? new Date(iso).toLocaleString() : '';
+
+function copyPrompt() {
+  const text = document.getElementById('agentPrompt').textContent;
+  const btn = document.getElementById('copyBtn');
+  navigator.clipboard.writeText(text).then(() => {
+    btn.textContent = '✓ Copied';
+    btn.classList.add('copied');
+    setTimeout(() => { btn.textContent = 'Copy'; btn.classList.remove('copied'); }, 2000);
+  }).catch(() => {
+    // Fallback for older browsers
+    const ta = document.createElement('textarea');
+    ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0';
+    document.body.appendChild(ta); ta.select();
+    document.execCommand('copy');
+    document.body.removeChild(ta);
+    btn.textContent = '✓ Copied'; btn.classList.add('copied');
+    setTimeout(() => { btn.textContent = 'Copy'; btn.classList.remove('copied'); }, 2000);
+  });
+}
 
 function pillClass(s) { return ['pending','success','failure'].includes(s) ? s : 'pending'; }
 
