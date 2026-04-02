@@ -17,9 +17,12 @@ from __future__ import annotations
 
 import uvicorn
 from datetime import datetime, timezone
+import os
+import sys
 from typing import Literal
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import HTMLResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 # ---------------------------------------------------------------------------
@@ -42,6 +45,11 @@ _history: list[dict] = []
 # ---------------------------------------------------------------------------
 
 app = FastAPI(title="Agent Status Service", version="1.0.0")
+
+# PyInstaller extracts to a temp folder _MEIPASS; resolve the correct path for static assets
+base_dir = getattr(sys, '_MEIPASS', os.path.dirname(os.path.abspath(__file__)))
+assets_dir = os.path.join(base_dir, "assets")
+app.mount("/assets", StaticFiles(directory=assets_dir), name="assets")
 
 
 # ---------------------------------------------------------------------------
@@ -136,6 +144,7 @@ HTML = """<!DOCTYPE html>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
 <title>Agent Status Dashboard</title>
+<link id="favicon" rel="icon" type="image/png" href="/assets/icon.png" />
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet"/>
 <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
@@ -175,10 +184,10 @@ HTML = """<!DOCTYPE html>
   }
   .logo {
     width: 44px; height: 44px; border-radius: 10px;
-    background: linear-gradient(135deg, var(--accent), var(--accent2));
-    display: flex; align-items: center; justify-content: center;
-    font-size: 1.4rem; box-shadow: var(--glow);
+    overflow: hidden; flex-shrink: 0;
+    box-shadow: var(--glow);
   }
+  .logo img { width: 100%; height: 100%; object-fit: cover; display: block; }
   header h1 { font-size: 1.4rem; font-weight: 700; }
   header p  { color: var(--muted); font-size: 0.85rem; margin-top: 2px; }
 
@@ -390,7 +399,7 @@ HTML = """<!DOCTYPE html>
 <div class="container">
 
   <header>
-    <div class="logo">⚙️</div>
+    <div class="logo"><img src="/assets/icon.png" alt="statusgate icon" /></div>
     <div>
       <h1>Agent Status Dashboard</h1>
       <p>Live status board for iterative agent workflows</p>
@@ -523,8 +532,14 @@ async function fetchMessage() {
     if (!r.ok) return;
     const d = await r.json();
     const panel = document.getElementById('msgPanel');
-    if (!d.message) { panel.style.display = 'none'; return; }
+    const favicon = document.getElementById('favicon');
+    if (!d.message) {
+      panel.style.display = 'none';
+      favicon.href = '/assets/icon.png';
+      return;
+    }
     panel.style.display = 'block';
+    favicon.href = '/assets/icon_ready.png';
     document.getElementById('msgBody').innerHTML = marked.parse(d.message);
     document.getElementById('msgTs').textContent = 'Received: ' + fmtTs(d.timestamp);
   } catch(e) {}
@@ -580,6 +595,7 @@ async function postStatus() {
     msg.textContent = '✓ Status updated successfully.';
     msg.className = 'msg ok';
     document.getElementById('ctxInput').value = '';
+    document.getElementById('favicon').href = '/assets/icon.png';
     await Promise.all([fetchStatus(), fetchHistory()]);
   } catch(e) {
     msg.textContent = '✗ ' + e.message;

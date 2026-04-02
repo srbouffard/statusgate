@@ -57,6 +57,7 @@ build: install
 		--distpath "$(DIST_DIR)" \
 		--workpath "$(BUILD_DIR)" \
 		--specpath . \
+		--add-data "assets:assets" \
 		$(ENTRY)
 	@echo ""
 	@echo "==> Build complete!"
