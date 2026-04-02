@@ -1,6 +1,6 @@
 # statusgate
 
-A lightweight FastAPI service that exposes a simple status dashboard and REST API for iterative agent workflows.  
+A lightweight FastAPI service that exposes a simple status dashboard and REST API for iterative agent workflows via a nice web UI rather than the CLI.  
 An external agent can poll `/status` to check whether work is **pending / succeeded / failed** and retrieve context for corrective actions.
 
 ---
