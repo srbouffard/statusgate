@@ -513,6 +513,7 @@ async function fetchStatus() {
     pill.className = 'pill ' + pillClass(d.status);
     document.getElementById('bannerCtx').textContent = d.context || '—';
     document.getElementById('bannerTs').textContent = 'Last updated: ' + fmtTs(d.timestamp);
+    document.getElementById('statusSel').value = d.status;
   } catch(e) {}
 }
 
