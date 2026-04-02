@@ -460,7 +460,7 @@ Rules:
     After applying the fix, post a progress update:
       POST http://localhost:8000/message
       Content-Type: application/json
-      {"message": "# Update\n\nDescribe what you did..."} (markdown supported)
+      {"message": "# Update...Describe what you did/what you need..."} (markdown supported)
     This will automatically reset the status to pending. Then resume polling every 10 seconds.
   - Do NOT call POST /status yourself — only the human operator sets the status.
   - Repeat this loop indefinitely until the API returns success.
