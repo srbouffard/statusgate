@@ -512,6 +512,8 @@ function copyPrompt() {
 
 function pillClass(s) { return ['pending','success','failure'].includes(s) ? s : 'pending'; }
 
+let lastServerStatus = null;
+
 async function fetchStatus() {
   try {
     const r = await fetch('/status');
@@ -522,7 +524,11 @@ async function fetchStatus() {
     pill.className = 'pill ' + pillClass(d.status);
     document.getElementById('bannerCtx').textContent = d.context || '—';
     document.getElementById('bannerTs').textContent = 'Last updated: ' + fmtTs(d.timestamp);
-    document.getElementById('statusSel').value = d.status;
+    
+    if (lastServerStatus !== d.status) {
+      document.getElementById('statusSel').value = d.status;
+      lastServerStatus = d.status;
+    }
   } catch(e) {}
 }
 
