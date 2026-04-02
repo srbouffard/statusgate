@@ -2,14 +2,16 @@
 Agent Status Service
 --------------------
 A lightweight FastAPI service exposing:
-  - GET  /status  → latest status + context
-  - POST /status  → update status + context
+  - GET  /status   → latest status + context
+  - POST /status   → update status + context
+  - GET  /message  → latest agent message
+  - POST /message  → post a markdown message (auto-resets status to pending)
+  - GET  /history  → unified status + message history
   - GET  /         → browser UI
 
 Run with:
     pip install fastapi uvicorn
-    python server.py
-"""
+    python server.py"""
 
 from __future__ import annotations
 
@@ -31,6 +33,8 @@ _current: dict = {
     "context": "",
     "timestamp": datetime.now(timezone.utc).isoformat(),
 }
+_current_message: dict | None = None
+# Unified history — each entry has a "type" key: "status" | "message"
 _history: list[dict] = []
 
 # ---------------------------------------------------------------------------
@@ -47,6 +51,10 @@ app = FastAPI(title="Agent Status Service", version="1.0.0")
 class StatusPayload(BaseModel):
     status: StatusLiteral
     context: str = ""
+
+
+class MessagePayload(BaseModel):
+    message: str  # markdown content
 
 
 class StatusResponse(BaseModel):
@@ -76,7 +84,7 @@ def get_status():
 def post_status(payload: StatusPayload):
     """Update the status and context."""
     ts = datetime.now(timezone.utc).isoformat()
-    _history.append({**_current})
+    _history.append({**_current, "type": "status"})
     _current["status"] = payload.status
     _current["context"] = payload.context
     _current["timestamp"] = ts
@@ -88,9 +96,33 @@ def post_status(payload: StatusPayload):
     )
 
 
+@app.get("/message")
+def get_message():
+    """Return the latest agent message, or null fields if none yet."""
+    if _current_message is None:
+        return {"message": None, "timestamp": None}
+    return _current_message
+
+
+@app.post("/message", status_code=201)
+def post_message(payload: MessagePayload):
+    """Accept a markdown message from the agent and reset status to pending."""
+    global _current_message
+    ts = datetime.now(timezone.utc).isoformat()
+    # Snapshot current status into history before resetting
+    _history.append({**_current, "type": "status"})
+    # Reset status to pending so the agent won't re-read stale user context
+    _current["status"] = "pending"
+    _current["timestamp"] = ts
+    # Store the message
+    _current_message = {"message": payload.message, "timestamp": ts}
+    _history.append({"type": "message", "message": payload.message, "timestamp": ts})
+    return _current_message
+
+
 @app.get("/history")
 def get_history():
-    """Return the full update history (oldest first)."""
+    """Return the full unified history (status + message entries, oldest first)."""
     return {"history": _history}
 
 
@@ -106,6 +138,7 @@ HTML = """<!DOCTYPE html>
 <title>Agent Status Dashboard</title>
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet"/>
+<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
 <style>
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -223,6 +256,55 @@ HTML = """<!DOCTYPE html>
   .msg.ok  { background: rgba(64,217,127,0.12); color: var(--success); border: 1px solid var(--success); display: block; }
   .msg.err { background: rgba(240,85,85,0.12);  color: var(--failure); border: 1px solid var(--failure);  display: block; }
 
+  /* Agent message panel */
+  .msg-panel {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 1.5rem;
+    margin-bottom: 1.5rem;
+    background-image: linear-gradient(135deg, rgba(91,138,240,0.06) 0%, rgba(64,217,127,0.04) 100%);
+    display: none; /* hidden until a message exists */
+  }
+  .msg-panel-header {
+    display: flex; align-items: center; justify-content: space-between;
+    margin-bottom: 1rem;
+  }
+  .msg-panel-header h2 {
+    font-size: 0.9rem; font-weight: 600; color: var(--muted);
+    text-transform: uppercase; letter-spacing: 0.08em;
+  }
+  .msg-tag {
+    font-size: 0.72rem; font-weight: 600; letter-spacing: 0.07em;
+    text-transform: uppercase; padding: 3px 10px; border-radius: 999px;
+    color: var(--accent); background: rgba(91,138,240,0.12);
+    border: 1px solid rgba(91,138,240,0.35);
+    animation: pulse 2.5s ease-in-out infinite;
+  }
+  .msg-body {
+    background: var(--surface2); border: 1px solid var(--border);
+    border-radius: 8px; padding: 1rem 1.2rem;
+    font-size: 0.9rem; line-height: 1.7; color: var(--text);
+  }
+  /* Markdown styles inside .msg-body */
+  .msg-body h1,.msg-body h2,.msg-body h3 { font-weight: 600; margin: 0.75rem 0 0.35rem; color: var(--text); }
+  .msg-body h1 { font-size: 1.1rem; } .msg-body h2 { font-size: 1rem; } .msg-body h3 { font-size: 0.95rem; }
+  .msg-body p  { margin: 0.4rem 0; }
+  .msg-body ul, .msg-body ol { margin: 0.4rem 0 0.4rem 1.4rem; }
+  .msg-body li { margin-bottom: 0.2rem; }
+  .msg-body code {
+    background: rgba(91,138,240,0.12); color: var(--accent);
+    border-radius: 4px; padding: 1px 5px; font-size: 0.85em; font-family: monospace;
+  }
+  .msg-body pre {
+    background: rgba(0,0,0,0.3); border: 1px solid var(--border);
+    border-radius: 6px; padding: 0.75rem 1rem; overflow-x: auto; margin: 0.5rem 0;
+  }
+  .msg-body pre code { background: none; padding: 0; color: var(--text); }
+  .msg-body blockquote {
+    border-left: 3px solid var(--accent); margin: 0.5rem 0;
+    padding: 0.25rem 0.75rem; color: var(--muted);
+  }
+  .msg-ts { font-size: 0.72rem; color: var(--muted); margin-top: 0.6rem; }
+
   /* History */
   .history-list { list-style: none; display: flex; flex-direction: column; gap: 0.75rem; }
   .hitem {
@@ -231,9 +313,22 @@ HTML = """<!DOCTYPE html>
     border-radius: 10px; padding: 0.9rem 1.1rem;
     animation: fadeIn 0.3s ease;
   }
+  .hitem.hitem-msg {
+    border-color: rgba(91,138,240,0.3);
+    background: rgba(91,138,240,0.04);
+  }
   @keyframes fadeIn { from { opacity:0; transform: translateY(6px); } to { opacity:1; } }
-  .hitem-body { flex: 1; }
+  .hitem-badge {
+    flex-shrink: 0; padding: 4px 10px; border-radius: 999px;
+    font-size: 0.72rem; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase;
+    color: var(--accent); background: rgba(91,138,240,0.12); border: 1px solid rgba(91,138,240,0.35);
+  }
+  .hitem-body { flex: 1; min-width: 0; }
   .hitem-context { font-size: 0.88rem; margin-top: 4px; color: var(--muted); word-break: break-word; }
+  /* markdown inside history message items */
+  .hitem-md { font-size: 0.85rem; margin-top: 4px; color: var(--muted); word-break: break-word; line-height: 1.55; }
+  .hitem-md p { margin: 0.2rem 0; }
+  .hitem-md code { background: rgba(91,138,240,0.1); color: var(--accent); border-radius: 3px; padding: 0 4px; font-size: 0.82em; font-family: monospace; }
   .hitem-ts { font-size: 0.72rem; color: var(--muted); margin-top: 4px; }
   .empty { color: var(--muted); font-size: 0.88rem; text-align: center; padding: 1.5rem 0; }
 
@@ -331,9 +426,19 @@ HTML = """<!DOCTYPE html>
     <div class="msg" id="formMsg"></div>
   </div>
 
+  <!-- Agent message panel (shown only when a message exists) -->
+  <div class="msg-panel" id="msgPanel">
+    <div class="msg-panel-header">
+      <h2>Agent Message</h2>
+      <span class="msg-tag">🤖 New</span>
+    </div>
+    <div class="msg-body" id="msgBody"></div>
+    <div class="msg-ts" id="msgTs"></div>
+  </div>
+
   <!-- History -->
   <div class="card">
-    <h2>Update History</h2>
+    <h2>Activity log</h2>
     <ul class="history-list" id="historyList">
       <li class="empty">No previous updates.</li>
     </ul>
@@ -350,8 +455,14 @@ HTML = """<!DOCTYPE html>
       <pre id="agentPrompt">Monitor the API at http://localhost:8000/status continuously until a success status is returned.
 
 Rules:
-  - If status is pending, wait 10 seconds and poll again.
-  - If status is failure, read the context field and apply the corrective measures described in it. Do NOT post any status update to the API yourself — only the system sets the status. After applying the fix, resume polling every 10 seconds.
+  - If status is "pending", wait 10 seconds and poll again.
+  - If status is "failure", read the context field and apply the corrective measures described in it.
+    After applying the fix, post a progress update:
+      POST http://localhost:8000/message
+      Content-Type: application/json
+      {"message": "# Update\n\nDescribe what you did..."} (markdown supported)
+    This will automatically reset the status to pending. Then resume polling every 10 seconds.
+  - Do NOT call POST /status yourself — only the human operator sets the status.
   - Repeat this loop indefinitely until the API returns success.
   - Only stop when success is confirmed from the API.</pre>
     </div>
@@ -361,7 +472,8 @@ Rules:
   <div class="api-hint">
     <span><code>GET /status</code> → latest JSON</span>
     <span><code>POST /status</code> → update (body: <code>{"status","context"}</code>)</span>
-    <span><code>GET /history</code> → all past entries</span>
+    <span><code>POST /message</code> → agent markdown message → resets to pending</span>
+    <span><code>GET /history</code> → unified activity log</span>
     <span><code>retry-after: 5s</code> suggested polling interval</span>
   </div>
 
@@ -404,6 +516,19 @@ async function fetchStatus() {
   } catch(e) {}
 }
 
+async function fetchMessage() {
+  try {
+    const r = await fetch('/message');
+    if (!r.ok) return;
+    const d = await r.json();
+    const panel = document.getElementById('msgPanel');
+    if (!d.message) { panel.style.display = 'none'; return; }
+    panel.style.display = 'block';
+    document.getElementById('msgBody').innerHTML = marked.parse(d.message);
+    document.getElementById('msgTs').textContent = 'Received: ' + fmtTs(d.timestamp);
+  } catch(e) {}
+}
+
 async function fetchHistory() {
   try {
     const r = await fetch('/history');
@@ -414,14 +539,26 @@ async function fetchHistory() {
       list.innerHTML = '<li class="empty">No previous updates.</li>';
       return;
     }
-    list.innerHTML = [...d.history].reverse().map(h => `
+    list.innerHTML = [...d.history].reverse().map(h => {
+      if (h.type === 'message') {
+        return `
+        <li class="hitem hitem-msg">
+          <span class="hitem-badge">🤖 Agent</span>
+          <div class="hitem-body">
+            <div class="hitem-md">${marked.parse(h.message)}</div>
+            <div class="hitem-ts">${fmtTs(h.timestamp)}</div>
+          </div>
+        </li>`;
+      }
+      return `
       <li class="hitem">
         <div class="pill ${pillClass(h.status)}">${h.status}</div>
         <div class="hitem-body">
           <div class="hitem-context">${h.context || '<em>no context</em>'}</div>
           <div class="hitem-ts">${fmtTs(h.timestamp)}</div>
         </div>
-      </li>`).join('');
+      </li>`;
+    }).join('');
   } catch(e) {}
 }
 
@@ -454,8 +591,9 @@ async function postStatus() {
 
 // Initial load + poll every 5s
 fetchStatus();
+fetchMessage();
 fetchHistory();
-setInterval(() => { fetchStatus(); fetchHistory(); }, 5000);
+setInterval(() => { fetchStatus(); fetchMessage(); fetchHistory(); }, 5000);
 </script>
 </body>
 </html>"""
